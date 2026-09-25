@@ -28,6 +28,11 @@ use anyhow::Result;
 use anyhow::anyhow;
 pub use backend::BackendKind;
 use backend::BackendPaths;
+#[cfg(windows)]
+pub use backend::windows::CODEX_WINDOWS_SPAWN_PARENT_ARG1;
+#[cfg(windows)]
+#[doc(hidden)]
+pub use backend::windows::run_windows_spawn_parent_main;
 use codex_app_server_protocol::RemoteControlConnectionStatus;
 use codex_app_server_protocol::RemoteControlPairingStartResponse;
 use codex_app_server_transport::app_server_control_socket_path;
