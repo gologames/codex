@@ -3,6 +3,12 @@
 //! Managed servers must not elevate ordinary clients sharing the account's socket.
 //! Installer jobs contain extraction processes when an update is cancelled.
 
+mod spawn;
+
+pub use spawn::CODEX_WINDOWS_SPAWN_PARENT_ARG1;
+pub(super) use spawn::ensure_detached_with_fallback;
+pub use spawn::run_windows_spawn_parent_main;
+
 use std::io;
 use std::os::windows::io::AsRawHandle;
 use std::os::windows::io::FromRawHandle;
@@ -28,7 +34,6 @@ use windows_sys::Win32::Storage::FileSystem::LOCKFILE_FAIL_IMMEDIATELY;
 use windows_sys::Win32::Storage::FileSystem::LockFileEx;
 use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
 use windows_sys::Win32::System::JobObjects::CreateJobObjectW;
-use windows_sys::Win32::System::JobObjects::IsProcessInJob;
 use windows_sys::Win32::System::JobObjects::JOB_OBJECT_LIMIT_BREAKAWAY_OK;
 use windows_sys::Win32::System::JobObjects::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
 use windows_sys::Win32::System::JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION;
@@ -80,42 +85,32 @@ pub(crate) fn ensure_not_elevated() -> Result<()> {
 // Probe the actual child association: escaping an inner job can leave an outer
 // job attached. Suspend the image so no application code runs before cleanup.
 pub(crate) fn ensure_detached_launch(executable: &Path) -> Result<()> {
-    let mut child = Command::new(executable)
+    let stderr = std::fs::File::options().write(true).open("NUL")?;
+    let mut command = Command::new(executable);
+    let child = command
         .creation_flags(CREATE_SUSPENDED | DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .context("cannot launch detached daemon; existing daemon was not stopped")?;
-    let mut in_job = 0;
-    let result = if unsafe {
-        IsProcessInJob(
-            child.as_raw_handle() as _,
-            /*jobhandle*/ 0,
-            &mut in_job,
-        )
-    } == 0
-    {
-        Err(io::Error::last_os_error()).context("failed to verify daemon launch capability")
-    } else if in_job != 0 {
-        Err(anyhow::anyhow!(
-            "host Job Object prevents daemon detachment; start from a host that allows breakaway"
-        ))
-    } else {
-        Ok(())
-    };
-    child
-        .kill()
-        .context("failed to terminate suspended launch probe")?;
-    child
-        .wait()
-        .context("failed to reap suspended launch probe")?;
-    result
+    let child = spawn::ensure_detached_with_fallback_blocking(
+        Process(child.into()),
+        &command,
+        &stderr,
+        CREATE_SUSPENDED,
+    )?;
+    spawn::terminate_and_wait(&child).context("failed to clean up suspended launch probe")
 }
 
 pub(super) struct Process(OwnedHandle);
 
 impl Process {
+    pub(super) fn id(&self) -> Option<u32> {
+        let pid = unsafe { GetProcessId(self.0.as_raw_handle() as _) };
+        (pid != 0).then_some(pid)
+    }
+
     pub(super) fn open(pid: u32) -> Result<Option<Self>> {
         Self::open_with_access(pid, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE)
     }
@@ -168,29 +163,6 @@ impl Process {
             WAIT_OBJECT_0 => Ok(false),
             _ => Err(io::Error::last_os_error()).context("failed to wait for daemon process"),
         }
-    }
-
-    pub(super) fn ensure_detached(&self) -> Result<()> {
-        let mut in_job = 0;
-        if unsafe {
-            IsProcessInJob(
-                self.0.as_raw_handle() as _,
-                /*jobhandle*/ 0,
-                &mut in_job,
-            )
-        } == 0
-        {
-            let error = io::Error::last_os_error();
-            self.terminate()?;
-            return Err(error).context("failed to verify daemon detachment");
-        }
-        if in_job != 0 {
-            self.terminate()?;
-            anyhow::bail!(
-                "host Job Object prevents daemon detachment; start from a host that allows breakaway"
-            );
-        }
-        Ok(())
     }
 
     pub(super) fn terminate(&self) -> Result<()> {

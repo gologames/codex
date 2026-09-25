@@ -28,6 +28,7 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 [target.'cfg(windows)'.dependencies]
+codex-app-server-daemon = { workspace = true }
 codex-windows-sandbox = { workspace = true }
 pathdiff = { workspace = true }
 

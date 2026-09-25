@@ -79,7 +79,22 @@ impl PidBackend {
                 None
             };
         let mut command = Command::new(&codex_bin);
-        let stderr_log = match self.open_stderr_log().await {
+        let stderr_log = match async {
+            let stderr_log = self.open_stderr_log().await?;
+            #[cfg(windows)]
+            let stderr_log = {
+                let fallback_stderr = stderr_log
+                    .try_clone()
+                    .await
+                    .context("failed to clone daemon stderr log")?
+                    .into_std()
+                    .await;
+                (stderr_log, fallback_stderr)
+            };
+            anyhow::Ok(stderr_log)
+        }
+        .await
+        {
             Ok(stderr_log) => stderr_log,
             Err(err) => {
                 if replacement.is_none() {
@@ -88,6 +103,8 @@ impl PidBackend {
                 return Err(err);
             }
         };
+        #[cfg(windows)]
+        let (stderr_log, fallback_stderr) = stderr_log;
         command
             .args(self.command_args())
             .stdin(Stdio::null())
@@ -233,7 +250,18 @@ impl PidBackend {
             }
         }
 
-        let child = match command.spawn() {
+        #[cfg(windows)]
+        let spawn_result = command.as_std_mut().spawn();
+        #[cfg(not(windows))]
+        let spawn_result = command.spawn();
+        #[cfg(windows)]
+        let spawn_result = async {
+            let child = spawn_result?;
+            super::super::windows::ensure_detached_with_fallback(child, command, fallback_stderr)
+                .await
+        }
+        .await;
+        let child = match spawn_result {
             Ok(child) => child,
             Err(err) => {
                 if replacement.is_none() {
@@ -255,15 +283,7 @@ impl PidBackend {
         let pid = child
             .id()
             .context("spawned app-server process has no pid")?;
-        let record = match async {
-            #[cfg(windows)]
-            super::super::windows::Process::open(pid)?
-                .context("daemon exited during launch")?
-                .ensure_detached()?;
-            read_process_start_time(pid).await
-        }
-        .await
-        {
+        let record = match read_process_start_time(pid).await {
             Ok(process_start_time) => PidRecord {
                 pid,
                 process_start_time,

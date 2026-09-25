@@ -4,6 +4,8 @@ use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
 
+#[cfg(windows)]
+use codex_app_server_daemon::CODEX_WINDOWS_SPAWN_PARENT_ARG1;
 use codex_apply_patch::CODEX_CORE_APPLY_PATCH_ARG1;
 use codex_async_utils::THREAD_STACK_SIZE_BYTES;
 #[cfg(unix)]
@@ -12,7 +14,7 @@ use codex_exec_server::CODEX_FS_HELPER_ARG1;
 use codex_install_context::InstallContext;
 use codex_sandboxing::landlock::CODEX_LINUX_SANDBOX_ARG0;
 use codex_utils_home_dir::find_codex_home;
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 use codex_windows_sandbox::CODEX_WINDOWS_SANDBOX_ARG1;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
@@ -100,6 +102,10 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
     }
 
     let argv1 = args.next().unwrap_or_default();
+    #[cfg(windows)]
+    if argv1 == CODEX_WINDOWS_SPAWN_PARENT_ARG1 {
+        codex_app_server_daemon::run_windows_spawn_parent_main();
+    }
     if argv1 == codex_sandboxing::CODEX_WINDOWS_MXC_ARG1 {
         codex_sandboxing::run_windows_mxc_main();
     }
@@ -110,7 +116,7 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
     if argv1 == CODEX_FS_HELPER_ARG1 {
         codex_exec_server::run_fs_helper_main();
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(windows)]
     if argv1 == CODEX_WINDOWS_SANDBOX_ARG1 {
         codex_windows_sandbox::run_windows_sandbox_wrapper_main();
     }
