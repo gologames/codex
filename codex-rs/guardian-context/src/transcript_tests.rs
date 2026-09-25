@@ -33,6 +33,58 @@ fn transcript_config() -> ConversationTranscriptConfig {
     }
 }
 
+#[test]
+fn heartbeat_references_preserve_positions_changes_and_human_messages() {
+    let make = |time: &str, instructions: &str, kind: &str| {
+        serde_json::from_value::<ResponseItem>(serde_json::json!({
+        "type": "message", "role": "user",
+        "content": [{"type": "input_text", "text": format!("<heartbeat>\n  <automation_id>monitor</automation_id>\n  <current_time_iso>{time}</current_time_iso>\n  <instructions>\n{instructions}\n  </instructions>\n</heartbeat>\n")}],
+        "internal_chat_message_metadata_passthrough": {"content_item_kinds": [kind]}
+    })).unwrap()
+    };
+    let history = vec![
+        make("01:00Z", "Monitor only.", "user.heartbeat"),
+        make("01:30Z", "Monitor only.", "user.heartbeat"),
+        make("01:40Z", "Create a worktree.", "user.text"),
+        make("02:00Z", "Monitor only.", "user.heartbeat"),
+        make("02:30Z", "Never create a worktree.", "user.heartbeat"),
+        make("03:00Z", "Monitor only.", "user.heartbeat"),
+        make("03:10Z", "Monitor only.", "user.text"),
+    ];
+    let entries = collect_transcript(&history, &transcript_config());
+    assert_eq!(entries.len(), history.len());
+    for index in [0, 2, 4, 5, 6] {
+        let ResponseItem::Message { content, .. } = &history[index] else {
+            unreachable!()
+        };
+        let ContentItem::InputText { text } = &content[0] else {
+            unreachable!()
+        };
+        assert_eq!(
+            entries[index],
+            entry(ConversationTranscriptEntryKind::User, text)
+        );
+    }
+    for index in [1, 3] {
+        assert!(
+            entries[index]
+                .text
+                .contains("unchanged from transcript entry [1]")
+        );
+        assert!(!entries[index].text.contains("Monitor only."));
+    }
+    // A rebuilt window starts with a full body, never a dangling old reference.
+    let rebuilt = collect_transcript(&history[3..].to_vec(), &transcript_config());
+    assert!(rebuilt[0].text.contains("Monitor only."));
+    let interrupted = vec![
+        history[0].clone(),
+        make("02:00Z", &"x".repeat(/*n*/ 3_600), "user.heartbeat"),
+        history[1].clone(),
+    ];
+    let interrupted = collect_transcript(&interrupted, &transcript_config());
+    assert!(interrupted[2].text.contains("Monitor only."));
+}
+
 fn entry(kind: ConversationTranscriptEntryKind, text: &str) -> ConversationTranscriptEntry {
     ConversationTranscriptEntry {
         kind,
@@ -42,7 +94,7 @@ fn entry(kind: ConversationTranscriptEntryKind, text: &str) -> ConversationTrans
 }
 
 #[test]
-fn registered_transcript_preserves_shared_roles_and_node_repl_tool_attribution() {
+fn registered_transcript_filters_roles_and_preserves_node_repl_tool_attribution() {
     let approved_action = format!(
         "{MANUAL_APPROVAL_DEVELOPER_PREFIX}\nApproved action: {}",
         "exact action ".repeat(/*n*/ 1_000)
@@ -53,6 +105,15 @@ fn registered_transcript_preserves_shared_roles_and_node_repl_tool_attribution()
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
                 text: "Inspect the workspace.".to_string(),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "developer".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "ordinary developer context".to_string(),
             }],
             phase: None,
             internal_chat_message_metadata_passthrough: None,

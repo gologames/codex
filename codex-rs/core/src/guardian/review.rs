@@ -4,7 +4,6 @@
 #[path = "review_request.rs"]
 mod request;
 
-use crate::context::GuardianContextMode;
 use codex_analytics::GuardianApprovalRequestSource;
 use codex_analytics::GuardianReviewAnalyticsResult;
 use codex_core_plugins::PluginCommandAttribution;
@@ -14,6 +13,8 @@ use codex_guardian_reviewer::GuardianReviewOutcome;
 #[cfg(test)]
 use codex_guardian_reviewer::GuardianReviewSessionLimits;
 use codex_guardian_reviewer::ReviewModel;
+use codex_prompts::ResolvedModelMessages;
+use codex_protocol::openai_models::GuardianScope;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::InternalSessionSource;
 use codex_protocol::protocol::ReviewDecision;
@@ -120,7 +121,6 @@ pub(crate) struct GuardianReviewOptions {
 pub(super) struct GuardianReviewSessionConfig {
     pub(super) spawn_config: crate::config::Config,
     pub(super) node_repl_policy: GuardianNodeReplPolicy,
-    pub(super) compaction_model_hash: Option<String>,
     review_model: ReviewModel,
 }
 
@@ -134,47 +134,22 @@ pub(super) async fn guardian_review_session_config(
         Some(network_proxy) => Some(network_proxy.proxy().current_cfg().await?),
         None => None,
     };
-    let available_models = session
+    let (review_model, guardian_model_info) =
+        super::reviewer_config::resolve_review_model(session, context).await;
+    let reviewer_config = session
         .services
-        .models_manager
-        .list_models(
-            codex_models_manager::manager::RefreshStrategy::Offline,
-            turn.config.http_client_factory(),
-        )
-        .await;
-    let default_review_model_id = turn.provider.approval_review_preferred_model();
-    let review_model = codex_guardian_reviewer::select_review_model(
-        &context.model_info,
-        context.reasoning_effort.as_ref(),
-        default_review_model_id,
-        &available_models,
-    );
-
-    // Resolve a separate reviewer against the current catalog on every attempt.
-    // Parent fallback must retain the action's metadata even after a catalog refresh.
-    let guardian_model_info =
-        if !review_model.catalog_contains_auto_review && !review_model.model_overridden {
-            Arc::clone(&context.model_info)
-        } else {
-            Arc::new(
-                session
-                    .services
-                    .models_manager
-                    .get_model_info(
-                        review_model.model.as_str(),
-                        &turn.config.to_models_manager_config(),
-                    )
-                    .await,
-            )
-        };
+        .thread_extension_data
+        .get::<codex_guardian_reviewer::ReviewerConfig<crate::config::Config>>()
+        .ok_or_else(|| anyhow::anyhow!("Guardian reviewer configuration is not installed"))?;
+    let model_messages = ResolvedModelMessages::from_model(&guardian_model_info);
     let mut spawn_config = build_guardian_review_session_config(
-        turn.config.as_ref(),
+        (reviewer_config.0)(turn.config.as_ref())?,
         live_network_config,
         review_model.model.as_str(),
         review_model.reasoning_effort.clone(),
         context.reasoning_summary,
         context.personality,
-        guardian_model_info.model_messages.as_ref(),
+        model_messages,
     )?;
     if context.model_info.computer_use_review_required() {
         spawn_config
@@ -192,10 +167,7 @@ pub(super) async fn guardian_review_session_config(
     }
     Ok(GuardianReviewSessionConfig {
         spawn_config,
-        compaction_model_hash: guardian_model_info.comp_hash.clone(),
-        node_repl_policy: GuardianNodeReplPolicy::from_model_messages(
-            guardian_model_info.model_messages.as_ref(),
-        ),
+        node_repl_policy: GuardianNodeReplPolicy::from_messages(model_messages),
         review_model,
     })
 }
@@ -218,8 +190,8 @@ async fn run_guardian_review_session_before_deadline(
     session: Arc<Session>,
     context: GuardianReviewContext,
     request: GuardianApprovalRequest,
+    category: GuardianScope,
     reasons: ApprovalRequestReasons,
-    schema: serde_json::Value,
     external_cancel: Option<CancellationToken>,
     deadline: Instant,
 ) -> (GuardianReviewOutcome, GuardianReviewAnalyticsResult) {
@@ -250,10 +222,10 @@ async fn run_guardian_review_session_before_deadline(
                 spawn_config: session_config.spawn_config,
                 node_repl_policy: session_config.node_repl_policy,
                 request,
+                category,
                 reasons,
-                schema,
+                schema: guardian_output_schema(),
                 review_model: session_config.review_model,
-                compaction_model_hash: session_config.compaction_model_hash,
                 reasoning_summary: context.reasoning_summary,
                 personality: context.personality,
                 external_cancel,
@@ -271,7 +243,6 @@ pub(super) async fn run_guardian_review_session_with_retry(
     context: impl Into<GuardianReviewContext>,
     request: GuardianApprovalRequest,
     reasons: ApprovalRequestReasons,
-    schema: serde_json::Value,
     external_cancel: Option<CancellationToken>,
     max_attempts: i64,
 ) -> (GuardianReviewOutcome, GuardianReviewAnalyticsResult) {
@@ -280,7 +251,6 @@ pub(super) async fn run_guardian_review_session_with_retry(
         context,
         request,
         reasons,
-        schema,
         external_cancel,
         GuardianReviewSessionLimits {
             max_attempts,
@@ -296,21 +266,26 @@ async fn run_guardian_review_session_with_retry_before_deadline(
     context: impl Into<GuardianReviewContext>,
     request: GuardianApprovalRequest,
     reasons: ApprovalRequestReasons,
-    schema: serde_json::Value,
     external_cancel: Option<CancellationToken>,
     limits: GuardianReviewSessionLimits,
 ) -> (GuardianReviewOutcome, GuardianReviewAnalyticsResult) {
     let context = context.into();
-    codex_guardian_reviewer::run_with_retry(limits, external_cancel.as_ref(), |deadline| {
-        run_guardian_review_session_before_deadline(
-            Arc::clone(&session),
-            context.clone(),
-            request.clone(),
-            reasons.clone(),
-            schema.clone(),
-            external_cancel.clone(),
-            deadline,
-        )
-    })
-    .await
+    let (outcome, analytics, _) =
+        codex_guardian_reviewer::run_with_retry(limits, external_cancel.as_ref(), |deadline| {
+            let attempt = run_guardian_review_session_before_deadline(
+                Arc::clone(&session),
+                context.clone(),
+                request.clone(),
+                request.guardian_scope(),
+                reasons.clone(),
+                external_cancel.clone(),
+                deadline,
+            );
+            async move {
+                let (outcome, analytics) = attempt.await;
+                (outcome, analytics, None::<()>)
+            }
+        })
+        .await;
+    (outcome, analytics)
 }

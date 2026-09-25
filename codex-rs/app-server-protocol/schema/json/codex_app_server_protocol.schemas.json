@@ -1820,6 +1820,75 @@
             },
             "method": {
               "enum": [
+                "account/gatewayOAuth/read"
+              ],
+              "title": "Account/gatewayOAuth/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "id",
+            "method"
+          ],
+          "title": "Account/gatewayOAuth/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
+                "account/gatewayOAuth/login"
+              ],
+              "title": "Account/gatewayOAuth/loginRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "id",
+            "method"
+          ],
+          "title": "Account/gatewayOAuth/loginRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
+                "account/gatewayOAuth/cancel"
+              ],
+              "title": "Account/gatewayOAuth/cancelRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "id",
+            "method"
+          ],
+          "title": "Account/gatewayOAuth/cancelRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
                 "modelProvider/capabilities/read"
               ],
               "title": "ModelProvider/capabilities/readRequestMethod",
@@ -3288,6 +3357,10 @@
         "experimentalApi": {
           "default": false,
           "description": "Opt into receiving experimental API methods and fields.",
+          "type": "boolean"
+        },
+        "explicitGatewayOauth": {
+          "description": "Use explicit gateway OAuth login instead of automatic browser authorization. Applies to this app-server's gateway runtime; later connections cannot undo it.",
           "type": "boolean"
         },
         "extensions": {
@@ -5455,6 +5528,26 @@
           "properties": {
             "method": {
               "enum": [
+                "account/gatewayOAuth/changed"
+              ],
+              "title": "Account/gatewayOAuth/changedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/GatewayOAuthChangedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Account/gatewayOAuth/changedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "account/rateLimits/updated"
               ],
               "title": "Account/rateLimits/updatedNotificationMethod",
@@ -7094,6 +7187,16 @@
             ],
             "description": "Per-account approval settings keyed by link ID."
           },
+          "omit_tools_from": {
+            "description": "Additional model-facing surfaces omitted for this connector's tools.",
+            "items": {
+              "$ref": "#/definitions/v2/ToolExposureSurface"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "open_world_enabled": {
             "type": [
               "boolean",
@@ -8310,6 +8413,7 @@
               "sessionBudgetExceeded",
               "usageLimitExceeded",
               "rateLimitExceeded",
+              "flexUnavailable",
               "serverOverloaded",
               "cyberPolicy",
               "misalignmentPolicyViolation",
@@ -9463,7 +9567,7 @@
             ]
           },
           "reloadUserConfig": {
-            "description": "When true, hot-reload updated runtime settings into loaded threads after writing. Session-static model, reasoning-effort, Plan-mode reasoning-effort, service-tier, and personality defaults are not reloaded.",
+            "description": "When true, hot-reload updated runtime settings into loaded threads after writing. Session-static model, reasoning-effort, Plan-mode reasoning-effort, and service-tier defaults are not reloaded. The deprecated personality setting is also not reloaded.",
             "type": "boolean"
           }
         },
@@ -9876,7 +9980,7 @@
           },
           "allowedWindowsSandboxImplementations": {
             "items": {
-              "$ref": "#/definitions/v2/WindowsSandboxSetupMode"
+              "$ref": "#/definitions/v2/WindowsSandboxImplementation"
             },
             "type": [
               "array",
@@ -10020,12 +10124,6 @@
           "sqliteHome": {
             "type": [
               "string",
-              "null"
-            ]
-          },
-          "windowsSandboxPrivateDesktop": {
-            "type": [
-              "boolean",
               "null"
             ]
           }
@@ -10483,6 +10581,18 @@
                   "image_url"
                 ],
                 "title": "ImageUrlContentItem",
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "file_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file_id"
+                ],
+                "title": "FileIdContentItem",
                 "type": "object"
               }
             ],
@@ -12355,6 +12465,18 @@
                 ],
                 "title": "ImageUrlFunctionCallOutputContentItem",
                 "type": "object"
+              },
+              {
+                "properties": {
+                  "file_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file_id"
+                ],
+                "title": "FileIdFunctionCallOutputContentItem",
+                "type": "object"
               }
             ],
             "properties": {
@@ -12423,6 +12545,95 @@
             "type": "object"
           }
         ]
+      },
+      "GatewayOAuthCancelResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "GatewayOAuthCancelResponse",
+        "type": "object"
+      },
+      "GatewayOAuthChangedNotification": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "authUrl": {
+            "description": "Authorization handoff, sent only to the connection that started login.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/v2/GatewayOAuthStatus"
+          }
+        },
+        "required": [
+          "providerId",
+          "status"
+        ],
+        "title": "GatewayOAuthChangedNotification",
+        "type": "object"
+      },
+      "GatewayOAuthLoginResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "GatewayOAuthLoginResponse",
+        "type": "object"
+      },
+      "GatewayOAuthReadResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "Current effective gateway policy and credential readiness; never contains credentials.",
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "providerName": {
+            "type": "string"
+          },
+          "required": {
+            "description": "Whether the selected provider uses gateway OAuth, even when already signed in.",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/GatewayOAuthStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when the effective provider does not use gateway OAuth."
+          }
+        },
+        "required": [
+          "providerId",
+          "providerName",
+          "required"
+        ],
+        "title": "GatewayOAuthReadResponse",
+        "type": "object"
+      },
+      "GatewayOAuthStatus": {
+        "enum": [
+          "notReady",
+          "started",
+          "succeeded",
+          "failed"
+        ],
+        "type": "string"
       },
       "GetAccountParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -14386,6 +14597,29 @@
         "title": "MarketplaceUpgradeResponse",
         "type": "object"
       },
+      "McpAppDisplayMode": {
+        "enum": [
+          "inline",
+          "fullscreen"
+        ],
+        "type": "string"
+      },
+      "McpAppUi": {
+        "description": "UI resource and display preference for model invocations, captured from the tool descriptor.",
+        "properties": {
+          "preferredModelDisplayMode": {
+            "$ref": "#/definitions/v2/McpAppDisplayMode"
+          },
+          "resourceUri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "preferredModelDisplayMode",
+          "resourceUri"
+        ],
+        "type": "object"
+      },
       "McpAuthStatus": {
         "enum": [
           "unknown",
@@ -14414,6 +14648,17 @@
           },
           "server": {
             "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/McpResourceReadTarget"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Explicit hosted app/account. Omit to retain legacy resource discovery."
           },
           "threadId": {
             "type": [
@@ -14453,6 +14698,25 @@
           "contents"
         ],
         "title": "McpResourceReadResponse",
+        "type": "object"
+      },
+      "McpResourceReadTarget": {
+        "properties": {
+          "connectorId": {
+            "type": "string"
+          },
+          "linkId": {
+            "description": "Null explicitly requests no-auth access, subject to the app's resource policy.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "connectorId",
+          "linkId"
+        ],
         "type": "object"
       },
       "McpServerConnectionStatus": {
@@ -14669,6 +14933,13 @@
         "properties": {
           "authStatus": {
             "$ref": "#/definitions/v2/McpAuthStatus"
+          },
+          "httpOrigin": {
+            "description": "HTTP origin of the effective configured endpoint, including plugin servers. Excludes credentials, path, query, and fragment; null for non-HTTP transports.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "name": {
             "type": "string"
@@ -15209,6 +15480,7 @@
           },
           "supportsPersonality": {
             "default": false,
+            "description": "@deprecated Always false; models no longer support personality selection.",
             "type": "boolean"
           },
           "upgrade": {
@@ -15922,6 +16194,7 @@
         "type": "object"
       },
       "Personality": {
+        "description": "Deprecated: `friendly` and `pragmatic` no longer select a style.",
         "enum": [
           "none",
           "friendly",
@@ -15962,6 +16235,7 @@
           "plus",
           "pro",
           "prolite",
+          "promax",
           "team",
           "self_serve_business_prolite",
           "self_serve_business_usage_based",
@@ -16045,6 +16319,18 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "onboardingSkill": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/SkillSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The declared onboarding skill, when the plugin and visible skill are enabled."
           },
           "scheduledTasks": {
             "items": {
@@ -21802,11 +22088,22 @@
                 "type": "string"
               },
               "mcpAppResourceUri": {
-                "description": "Deprecated: use `appContext.resourceUri` instead.",
+                "description": "Legacy compatibility field; prefer `mcpAppUi.resourceUri` when available.",
                 "type": [
                   "string",
                   "null"
                 ]
+              },
+              "mcpAppUi": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/v2/McpAppUi"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Presentation captured from the invoked descriptor; absent in older history."
               },
               "pluginId": {
                 "type": [
@@ -22262,8 +22559,24 @@
       },
       "ThreadItemEntry": {
         "properties": {
+          "completedAtMs": {
+            "description": "Unix timestamp (milliseconds) when the item completed, if recorded by the producer.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "item": {
             "$ref": "#/definitions/v2/ThreadItem"
+          },
+          "startedAtMs": {
+            "description": "Unix timestamp (milliseconds) when the item started, if recorded by the producer.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "turnId": {
             "description": "Turn containing this item.",
@@ -23331,7 +23644,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "@deprecated `friendly` and `pragmatic` no longer select a style. Changing this does not rewrite the thread's existing instructions."
           },
           "sandbox": {
             "anyOf": [
@@ -23867,7 +24181,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "@deprecated Reports the saved setting; `friendly` and `pragmatic` no longer select a style."
           },
           "sandboxPolicy": {
             "$ref": "#/definitions/v2/SandboxPolicy"
@@ -24050,7 +24365,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "@deprecated `friendly` and `pragmatic` no longer select a style."
           },
           "sandbox": {
             "anyOf": [
@@ -24810,6 +25126,32 @@
         ],
         "type": "object"
       },
+      "ToolExposureSurface": {
+        "description": "A model-facing surface on which a tool can be exposed.",
+        "oneOf": [
+          {
+            "description": "Nested tools available to Code Mode scripts.",
+            "enum": [
+              "code_mode"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Tools discovered later through tool search.",
+            "enum": [
+              "deferred"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Tools present in the model's initial tool list.",
+            "enum": [
+              "direct"
+            ],
+            "type": "string"
+          }
+        ]
+      },
       "ToolsV2": {
         "properties": {
           "web_search": {
@@ -25200,7 +25542,7 @@
                 "type": "null"
               }
             ],
-            "description": "Override the personality for this turn and subsequent turns."
+            "description": "@deprecated `friendly` and `pragmatic` no longer select a style. Changing this does not rewrite the thread's existing instructions."
           },
           "sandboxPolicy": {
             "anyOf": [
@@ -25427,6 +25769,32 @@
             "type": "object"
           },
           {
+            "anyOf": [
+              {
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url"
+                ],
+                "title": "UrlUserInput",
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "fileId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "fileId"
+                ],
+                "title": "FileIdUserInput",
+                "type": "object"
+              }
+            ],
             "properties": {
               "detail": {
                 "anyOf": [
@@ -25445,14 +25813,10 @@
                 ],
                 "title": "ImageUserInputType",
                 "type": "string"
-              },
-              "url": {
-                "type": "string"
               }
             },
             "required": [
-              "type",
-              "url"
+              "type"
             ],
             "title": "ImageUserInput",
             "type": "object"
@@ -25790,6 +26154,14 @@
           }
         },
         "type": "object"
+      },
+      "WindowsSandboxImplementation": {
+        "enum": [
+          "elevated",
+          "unelevated",
+          "mxc"
+        ],
+        "type": "string"
       },
       "WindowsSandboxReadiness": {
         "enum": [

@@ -126,6 +126,8 @@ pub struct McpConfig {
     pub chatgpt_base_url: String,
     /// Optional product SKU forwarded to the host-owned apps MCP server.
     pub apps_mcp_product_sku: Option<String>,
+    /// Requests server-side read-only filtering and invocation checks for MCP tools.
+    pub requires_read_only_mcp_tools: bool,
     /// Codex home directory used for MCP OAuth state and app-tool cache files.
     pub codex_home: PathBuf,
     /// Trusted enterprise IdP inherited after normal catalog and policy resolution.
@@ -653,7 +655,9 @@ fn mcp_server_config_for_url(
         environment_id: codex_config::DEFAULT_MCP_SERVER_ENVIRONMENT_ID.to_string(),
         enabled: true,
         required: false,
+        startup_readiness: Default::default(),
         supports_parallel_tool_calls: false,
+        tool_input_schema_max_bytes: None,
         omit_tools_from: None,
         disabled_reason: None,
         startup_timeout_sec: Some(Duration::from_secs(30)),

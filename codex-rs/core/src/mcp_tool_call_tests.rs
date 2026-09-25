@@ -90,7 +90,7 @@ fn approval_metadata(
         plugin_id: None,
         tool_title: tool_title.map(str::to_string),
         tool_description: tool_description.map(str::to_string),
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     }
@@ -1327,13 +1327,13 @@ async fn mcp_sandbox_cwd_uses_matching_server_environment_uri() -> anyhow::Resul
     let (_, mut turn_context) = make_session_and_context().await;
     let secondary_cwd = PathUri::parse("file:///C:/remote/project")?;
     let environment = turn_context
-        .environments
+        .initial_environments
         .primary()
         .expect("primary environment")
         .environment
         .clone();
     turn_context
-        .environments
+        .initial_environments
         .environments
         .push(TurnEnvironmentState::Ready(TurnEnvironment::new(
             TurnEnvironmentSelection {
@@ -1344,10 +1344,7 @@ async fn mcp_sandbox_cwd_uses_matching_server_environment_uri() -> anyhow::Resul
                     allow_login_shell: true,
                     workspace_roots: Vec::new(),
                     windows_sandbox_level: turn_context.windows_sandbox_level,
-                    windows_sandbox_private_desktop: turn_context
-                        .config
-                        .permissions
-                        .windows_sandbox_private_desktop,
+                    windows_sandbox_type: turn_context.config.permissions.windows_sandbox_type,
                     use_legacy_landlock: turn_context.config.features.use_legacy_landlock(),
                     permission_profile: turn_context
                         .config
@@ -1436,7 +1433,7 @@ fn mcp_tool_call_item_metadata_only_trusts_codex_apps_identity() {
         McpToolCallItemMetadata {
             connector_id: Some("asdk_app_0123456789abcdef0123456789abcdef".to_string()),
             link_id: Some("link_fedcba9876543210fedcba9876543210".to_string()),
-            mcp_app_resource_uri: None,
+            mcp_app_ui: None,
             app_name: Some("Calendar".to_string()),
             action_name: Some("create_event".to_string()),
             plugin_id: None,
@@ -1448,7 +1445,7 @@ fn mcp_tool_call_item_metadata_only_trusts_codex_apps_identity() {
         McpToolCallItemMetadata {
             connector_id: None,
             link_id: None,
-            mcp_app_resource_uri: None,
+            mcp_app_ui: None,
             app_name: None,
             action_name: None,
             plugin_id: None,
@@ -1473,7 +1470,7 @@ async fn mcp_tool_call_item_includes_app_identity() {
         McpToolCallItemMetadata {
             connector_id: Some("asdk_app_0123456789abcdef0123456789abcdef".to_string()),
             link_id: Some("link_fedcba9876543210fedcba9876543210".to_string()),
-            mcp_app_resource_uri: None,
+            mcp_app_ui: None,
             app_name: Some("Calendar".to_string()),
             action_name: Some("create_event".to_string()),
             plugin_id: Some("sample@test".to_string()),
@@ -1523,7 +1520,7 @@ async fn codex_apps_tool_call_request_meta_includes_turn_metadata_and_codex_apps
         plugin_id: None,
         tool_title: Some("Create Event".to_string()),
         tool_description: Some("Create a calendar event.".to_string()),
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: Some(
             serde_json::json!({
                 "resource_uri": "connector://calendar/tools/calendar_create_event",
@@ -1724,9 +1721,17 @@ async fn codex_apps_auth_elicitation_granular_mcp_disabled_returns_original_resu
     assert!(rx_event.try_recv().is_err());
 }
 
+#[test_case::test_case(SessionSource::Exec; "root")]
+#[test_case::test_case(SessionSource::SubAgent(SubAgentSource::Review); "subagent")]
+#[test_case::test_case(SessionSource::Internal(InternalSessionSource::Guardian); "guardian")]
 #[tokio::test]
-async fn codex_apps_auth_elicitation_enabled_by_default_requests_elicitation() {
-    let (session, turn_context, rx_event) = make_session_and_context_with_rx().await;
+async fn codex_apps_auth_elicitation_enabled_by_default_requests_elicitation(
+    source: SessionSource,
+) {
+    let (session, mut turn_context, rx_event) = make_session_and_context_with_rx().await;
+    Arc::get_mut(&mut turn_context)
+        .expect("single turn context ref")
+        .session_source = source;
     *session.active_turn.lock().await = Some(ActiveTurn::default());
     let result = codex_apps_auth_failure_result();
     let metadata = codex_apps_auth_failure_metadata();
@@ -1974,7 +1979,7 @@ fn guardian_mcp_review_request_includes_annotations_when_present() {
         plugin_id: None,
         tool_title: None,
         tool_description: None,
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     };
@@ -2341,6 +2346,7 @@ async fn persist_codex_app_tool_approval_writes_tool_override() {
                 "calendar".to_string(),
                 AppConfig {
                     enabled: true,
+                    omit_tools_from: None,
                     approvals_reviewer: None,
                     destructive_enabled: None,
                     open_world_enabled: None,
@@ -2738,7 +2744,7 @@ async fn approve_mode_skips_when_annotations_do_not_require_approval() {
         plugin_id: None,
         tool_title: Some("Read Only Tool".to_string()),
         tool_description: None,
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     };
@@ -2819,7 +2825,7 @@ async fn guardian_mode_skips_auto_when_annotations_do_not_require_approval() {
         plugin_id: None,
         tool_title: Some("Read Only Tool".to_string()),
         tool_description: None,
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     };
@@ -2882,7 +2888,7 @@ async fn permission_request_hook_allows_mcp_tool_call() {
         plugin_id: None,
         tool_title: Some("Create entities".to_string()),
         tool_description: None,
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     };
@@ -3033,7 +3039,7 @@ async fn permission_request_hook_runs_after_remembered_mcp_approval() {
         plugin_id: None,
         tool_title: Some("Create entities".to_string()),
         tool_description: None,
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     };
@@ -3134,7 +3140,7 @@ async fn strict_auto_review_forces_guardian_for_mcp_policy_skip() {
         plugin_id: None,
         tool_title: Some("Dangerous Tool".to_string()),
         tool_description: Some("Reads calendar data.".to_string()),
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     };
@@ -3213,7 +3219,7 @@ async fn assert_mcp_user_approval_persistence(
         plugin_id: None,
         tool_title: Some("Create entities".to_string()),
         tool_description: None,
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     };
@@ -3299,7 +3305,7 @@ async fn prompt_mode_waits_for_approval_when_annotations_do_not_require_approval
         plugin_id: None,
         tool_title: Some("Read Only Tool".to_string()),
         tool_description: None,
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     };
@@ -3364,7 +3370,7 @@ async fn full_access_mode_skips_mcp_tool_approval_for_all_approval_modes() {
         plugin_id: None,
         tool_title: Some("Dangerous Tool".to_string()),
         tool_description: Some("Performs a risky action.".to_string()),
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     };
@@ -3423,7 +3429,7 @@ async fn approve_mode_skips_guardian_in_every_permission_mode() {
         plugin_id: None,
         tool_title: Some("Dangerous Tool".to_string()),
         tool_description: Some("Performs a risky action.".to_string()),
-        mcp_app_resource_uri: None,
+        mcp_app_ui: None,
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     };

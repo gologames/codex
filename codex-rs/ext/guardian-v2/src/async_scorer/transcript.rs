@@ -20,7 +20,6 @@ use codex_guardian_context::TranscriptImageInput;
 use codex_guardian_context::TranscriptRetentionConfig;
 use codex_guardian_context::TrustedTool;
 use codex_guardian_context::default_registry;
-pub(crate) use codex_guardian_context::truncate_text as truncate_entry;
 
 pub(crate) const MAX_MESSAGE_ENTRY_TOKENS: usize = ContextProfile::asynchronous()
     .transcript
@@ -46,6 +45,7 @@ pub(crate) struct ContextInput<'a> {
     pub(crate) root_conversation: &'a [GuardianRootMessage],
     pub(crate) trusted_user_answers: &'a [String],
     pub(crate) planned_action: Option<&'a PlannedAction>,
+    pub(crate) permissions: Option<&'a codex_guardian_context::PermissionContext>,
     pub(crate) previous_reviews: Option<&'a PreviousReviews>,
     pub(crate) trusted_tool: Option<&'a TrustedTool>,
     pub(crate) trusted_skill_paths: &'a [String],
@@ -90,6 +90,7 @@ impl TranscriptConfig {
             root_conversation,
             trusted_user_answers,
             planned_action,
+            permissions,
             previous_reviews,
             trusted_tool,
             trusted_skill_paths,
@@ -124,7 +125,7 @@ impl TranscriptConfig {
             root_conversation,
             trusted_user_answers,
             planned_action,
-            permissions: None,
+            permissions,
             previous_reviews,
             trusted_tool,
             trusted_skill_paths,

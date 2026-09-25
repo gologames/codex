@@ -41,6 +41,7 @@ pub const MAX_REVIEW_ATTEMPTS: i64 = 3;
 pub const REVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
 pub use deadline::run_before_review_deadline;
+pub use pool::ReviewSessionResult;
 pub use pool::ReviewerPool;
 pub use pool::ReviewerRequest;
 pub use pool::ReviewerSession;
@@ -51,15 +52,15 @@ pub use review::ReviewHost;
 
 pub use completion::ReviewCompletion;
 pub use completion::complete_review;
-pub use completion::guardian_timeout_message;
 
+pub use execution::ReviewTurnResult;
 pub use execution::ReviewerRuntime;
 pub use execution::start_review_turn;
 pub use execution::wait_for_guardian_review;
-pub use settings::ReviewerConfigOverrides;
+pub use settings::ReviewerConfig;
 pub use settings::ReviewerTurn;
-pub use settings::reviewer_allowed_tools;
-pub use settings::reviewer_config_overrides;
+pub use settings::reviewer_permission_profile;
+pub use settings::reviewer_tool_policy;
 
 pub use feedback::FailedReviewFeedback;
 pub use feedback::ReviewFeedbackContext;

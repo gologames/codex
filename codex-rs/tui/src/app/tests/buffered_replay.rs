@@ -103,6 +103,7 @@ async fn refreshed_active_reasoning_accepts_later_deltas_and_complete_summary() 
                     turns: vec![turn],
                     blocks_direct_input: false,
                     task_tools_available: false,
+                    reasoning_summary: None,
                 },
                 &mut snapshot,
             )
@@ -654,6 +655,7 @@ async fn misalignment_buffered_replay_preserves_input_after_continuation() {
             arguments: serde_json::json!({}),
             app_context: None,
             mcp_app_resource_uri: None,
+            mcp_app_ui: None,
             plugin_id: None,
             read_only_hint: None,
             result: None,

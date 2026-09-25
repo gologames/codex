@@ -5,9 +5,11 @@
 use std::sync::Arc;
 use std::sync::Weak;
 
+use codex_core::CodexResponsesHeaders;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
 use codex_core::config::Constrained;
+use codex_core::config::TokenBudgetConfig;
 use codex_core::guardian_review::GuardianReviewSession;
 use codex_extension_api::ExtensionFuture;
 use codex_extension_api::ExtensionRegistryBuilder;
@@ -30,6 +32,8 @@ use codex_protocol::protocol::InternalSessionSource;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadSource;
 
+mod reviewer_config;
+
 /// Owns reviewer agents through the same thread manager as the parent conversation.
 #[derive(Debug)]
 struct GuardianExtension {
@@ -45,6 +49,11 @@ impl ThreadLifecycleContributor<Config> for GuardianExtension {
             if input.session_source.is_internal() {
                 return;
             }
+            input
+                .thread_store
+                .insert(codex_guardian_reviewer::ReviewerConfig::<Config>(
+                    reviewer_config::build_reviewer_config,
+                ));
             let manager = self.thread_manager.clone();
             let runtime = input.thread_store.get_or_init(ReviewerTasks::default);
             input.thread_store.get_or_init(|| {
@@ -74,17 +83,28 @@ impl ThreadLifecycleContributor<Config> for GuardianExtension {
                             ) {
                                 options.config.ephemeral = true;
                             }
-                            options.config.permissions.approval_policy =
-                                Constrained::allow_only(AskForApproval::Never);
                             options.session_source =
                                 Some(SessionSource::Internal(InternalSessionSource::Guardian));
                             options.thread_source = Some(ThreadSource::GuardianReview);
+                            // This is the backend reviewer model, independent of current login.
+                            // Core checks the selected model and auth on each request attempt.
+                            let provider = codex_model_provider::create_model_provider(
+                                options.config.model_provider.clone(),
+                                /*auth_manager*/ None,
+                            );
+                            options.thread_extension_init.insert(CodexResponsesHeaders {
+                                model: provider.approval_review_preferred_model().to_owned(),
+                                headers: http::HeaderMap::from_iter([(
+                                    http::HeaderName::from_static("x-codex-guardian"),
+                                    http::HeaderValue::from_static("reviewer"),
+                                )]),
+                            });
                             options
                                 .thread_extension_init
                                 .insert(SessionIsolation::Isolated);
                             options
                                 .thread_extension_init
-                                .insert(codex_guardian_reviewer::reviewer_allowed_tools());
+                                .insert(codex_guardian_reviewer::reviewer_tool_policy());
                             let session_cancel = cancel.clone();
                             let until = async move {
                                 let _cancel_on_exit = cancel.clone().drop_guard();

@@ -40,6 +40,7 @@ use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::error::SandboxErr;
 use codex_protocol::models::AdditionalPermissionProfile as PermissionProfile;
 use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::ImageReference;
 use codex_protocol::models::NetworkPermissions;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::protocol::AskForApproval;
@@ -115,7 +116,7 @@ async fn activate_turn_with_new_review_authority(session: &Arc<Session>) -> Arc<
         )
         .await;
 
-    let (active_turn, _, _) = session
+    let (active_turn, _, _, _) = session
         .active_turn_context_and_strict_auto_review()
         .await
         .expect("next turn should have active review authority");
@@ -235,7 +236,9 @@ async fn request_permissions_routes_to_guardian_when_reviewer_is_enabled() {
         .thread_extension_data
         .get_or_init(crate::context::NodeReplReviewEvidence::default);
     let image = UserInput::Image {
-        image_url: image_url.to_string(),
+        image: ImageReference::Inline {
+            image_url: image_url.to_string(),
+        },
         detail: None,
     };
     evidence.record("js", "cell", "image", vec![image]);
@@ -250,7 +253,7 @@ async fn request_permissions_routes_to_guardian_when_reviewer_is_enabled() {
         ..RequestPermissionProfile::default()
     };
     let environment = turn_context
-        .environments
+        .initial_environments
         .primary()
         .expect("primary environment")
         .selection();
@@ -329,6 +332,7 @@ async fn request_permissions_uses_issuing_step_policy_and_reviewer() {
             config.permissions.approval_policy = Constrained::allow_any(AskForApproval::Never);
             config.approvals_reviewer = ApprovalsReviewer::User;
             config.model_provider.base_url = Some(format!("{}/v1", server.uri()));
+            config.model_provider.supports_websockets = false;
             config
                 .features
                 .enable(Feature::GuardianApproval)
@@ -455,7 +459,7 @@ async fn request_permissions_guardian_review_stops_when_cancelled(
         let cancellation_token = cancellation_token.clone();
         async move {
             let environment = turn_context
-                .environments
+                .initial_environments
                 .primary()
                 .expect("primary environment")
                 .selection();
@@ -564,7 +568,7 @@ async fn guardian_allows_exec_command_additional_permissions_requests_past_polic
         .set_permission_profile(codex_protocol::models::PermissionProfile::Disabled)
         .expect("test setup should allow disabling the permission profile");
     let TurnEnvironmentState::Ready(environment) =
-        &mut turn_context_raw.environments.environments[0]
+        &mut turn_context_raw.initial_environments.environments[0]
     else {
         panic!("primary environment should be ready");
     };
@@ -688,7 +692,7 @@ async fn strict_auto_review_turn_grant_forces_guardian_for_exec_command_policy_s
         })
         .expect("test setup should allow external sandbox permissions");
     let TurnEnvironmentState::Ready(environment) =
-        &mut turn_context_raw.environments.environments[0]
+        &mut turn_context_raw.initial_environments.environments[0]
     else {
         panic!("primary environment should be ready");
     };
@@ -794,7 +798,7 @@ async fn network_approval_uses_published_task_authority_within_same_turn(
             .task
             .as_ref()
             .expect("active task");
-        let mut settings = task.turn_context.current_settings.load_full();
+        let mut settings = task.turn_context.next_step_settings.load_full();
         update_selected_settings_for_test(Arc::make_mut(&mut settings), |selected| {
             selected
                 .approval_policy
@@ -802,7 +806,7 @@ async fn network_approval_uses_published_task_authority_within_same_turn(
                 .expect("update policy");
             selected.approvals_reviewer = ApprovalsReviewer::User;
         });
-        task.turn_context.current_settings.store(settings);
+        task.turn_context.next_step_settings.store(settings);
     }
     let decision = session
         .services
@@ -1321,7 +1325,7 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         parent_thread_id: None,
         thread_source: None,
         originator: "test_originator".to_string(),
-        agent_control: AgentControl::default(),
+        agent_control: LocalAgentControl::default().into(),
         dynamic_tools: Vec::new(),
         metrics_service_name: None,
         inherited_environments: None,

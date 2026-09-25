@@ -367,7 +367,9 @@ impl ManagedClientStartup {
                 )
                 .await
                 {
-                    Ok(result) => Arc::new(result?),
+                    Ok(result) => Arc::new(
+                        result?.with_read_only_tools(server.requires_read_only_mcp_tools()),
+                    ),
                     Err(_) => {
                         return Err(StartupOutcomeError::from(anyhow!(
                             "MCP client startup timed out after {startup_timeout:?}"
@@ -1285,6 +1287,7 @@ pub(crate) async fn make_rmcp_client(
                 resolved_bearer_token,
                 http_headers,
                 env_http_headers,
+                server.config().oauth.clone(),
                 store_mode,
                 keyring_backend_kind,
                 http_client,
